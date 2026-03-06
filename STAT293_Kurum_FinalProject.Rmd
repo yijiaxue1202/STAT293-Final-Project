@@ -1,0 +1,227 @@
+---
+title: "STAT293_Kurum_FinalProject"
+author: "Yijia Xue"
+date: "2026-02-22"
+output: pdf_document
+---
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(survival)
+library(splines)
+load("ckd.rdata")
+prot<-ckd_data$prot
+haem<-ckd_data$haem
+gfr<-ckd_data$gfr
+surv<-ckd_data$surv
+```
+
+# Data Preparation
+
+```{r}
+# Verify event indicator coding
+unique(surv$failure)
+unique(prot$proteinuria)
+summary(prot$years)
+summary(gfr$years)
+summary(haem$years)
+
+count_followups <- function(data) {
+  data %>%
+    group_by(id) %>%
+    summarise(n_followups = n(), .groups = "drop")
+}
+
+summary(count_followups(gfr)$n_followups)
+summary(count_followups(haem)$n_followups)
+summary(count_followups(prot)$n_followups)
+
+gfr_sub  <- gfr %>% select(id, years, gfr)
+haem_sub <- haem %>% select(id, years, haematocrit)
+
+merged_df <- inner_join(gfr_sub, haem_sub, by = c("id", "years"))
+cor(merged_df$gfr,
+    merged_df$haematocrit,
+    use = "complete.obs")
+
+
+subject_means <- merged_df %>%
+  group_by(id) %>%
+  summarise(
+    mean_gfr = mean(gfr, na.rm = TRUE),
+    mean_haem = mean(haematocrit, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cor(subject_means$mean_gfr,
+    subject_means$mean_haem,
+    use = "complete.obs")
+```
+
+# EDA
+
+```{r}
+# =========================
+# EDA
+# =========================
+
+# -------------------------
+# 1) Baseline summaries + survival overview
+# -------------------------
+summary(surv$age)
+summary(surv$weight)
+if ("gender" %in% names(surv)) table(surv$gender)
+if ("sex" %in% names(surv)) table(surv$sex)
+
+table(surv$failure)
+mean(surv$failure)
+summary(surv$fuyears)
+
+km_fit <- survfit(Surv(fuyears, failure) ~ 1, data = surv)
+plot(km_fit, xlab = "Time (years)", ylab = "Survival probability",
+     main = "Kaplan–Meier Curve for Graft Survival")
+
+# -------------------------
+# 2) Distributions (continuous biomarkers)
+# -------------------------
+gfr_clean  <- gfr  %>% filter(is.finite(gfr), !is.na(gfr))
+haem_clean <- haem %>% filter(is.finite(haematocrit), !is.na(haematocrit))
+
+ggplot(haem_clean, aes(x = haematocrit)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30, alpha = 0.6) +
+  geom_density(size = 1) +
+  labs(title = "Distribution of Haematocrit", x = "Haematocrit (%)", y = "Density") +
+  theme_minimal()
+
+ggplot(gfr_clean, aes(x = gfr)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30, alpha = 0.6) +
+  geom_density(size = 1) +
+  labs(title = "Distribution of GFR", x = "GFR (ml/min/1.73m2)", y = "Density") +
+  theme_minimal()
+
+# -------------------------
+# 3) Proteinuria prevalence over time
+# -------------------------
+prot_clean <- prot %>%
+  mutate(proteinuria = as.integer(as.character(proteinuria))) %>%  
+  filter(is.finite(years), !is.na(proteinuria))
+
+prot_prev <- prot_clean %>%
+  group_by(years) %>%
+  summarise(prevalence = mean(proteinuria), n = n(), .groups = "drop")
+
+ggplot(prot_prev, aes(x = years, y = prevalence)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(title = "Prevalence of Proteinuria Over Time",
+       x = "Time (years)", y = "Prevalence") +
+  theme_minimal()
+
+# -------------------------
+# 4) Longitudinal trends + heterogeneity
+# -------------------------
+set.seed(1)
+ids_gfr  <- sample(unique(gfr_clean$id),  min(30, length(unique(gfr_clean$id))))
+ids_haem <- sample(unique(haem_clean$id), min(30, length(unique(haem_clean$id))))
+
+ggplot(gfr_clean %>% filter(id %in% ids_gfr),
+       aes(x = years, y = gfr, group = id)) +
+  geom_line(alpha = 0.7) +
+  geom_smooth(aes(group = 1), se = FALSE, size = 1.1) +
+  labs(title = "GFR Trajectories Over Time (subset)", x = "Time (years)", y = "GFR") +
+  theme_minimal()
+
+ggplot(haem_clean %>% filter(id %in% ids_haem),
+       aes(x = years, y = haematocrit, group = id)) +
+  geom_line(alpha = 0.7) +
+  geom_smooth(aes(group = 1), se = FALSE, size = 1.1) +
+  labs(title = "Haematocrit Trajectories Over Time (subset)",
+       x = "Time (years)", y = "Haematocrit (%)") +
+  theme_minimal()
+
+
+ggplot(gfr_clean, aes(x = years, y = gfr)) +
+  geom_point(alpha = 0.07) +
+  stat_smooth(method = "lm", formula = y ~ ns(x, 3), se = FALSE, size = 1.1) +
+  labs(title = "GFR Trend (Natural Spline)", x = "Time (years)", y = "GFR") +
+  theme_minimal()
+
+# -------------------------
+# 5) Exploratory association: trends by failure status
+# -------------------------
+ggplot(gfr_clean, aes(x = years, y = gfr, color = factor(failure))) +
+  stat_smooth(se = FALSE, size = 1.2) +
+  labs(title = "GFR Trend by Failure Status",
+       x = "Time (years)", y = "GFR", color = "Failure") +
+  theme_minimal()
+
+ggplot(haem_clean, aes(x = years, y = haematocrit, color = factor(failure))) +
+  stat_smooth(se = FALSE, size = 1.2) +
+  labs(title = "Haematocrit Trend by Failure Status",
+       x = "Time (years)", y = "Haematocrit (%)", color = "Failure") +
+  theme_minimal()
+
+# -------------------------
+# 6) Missingness summary
+# -------------------------
+miss_prop <- tibble(
+  biomarker = c("GFR", "Haematocrit", "Proteinuria"),
+  prop_missing = c(mean(is.na(gfr$gfr) | !is.finite(gfr$gfr)),
+                   mean(is.na(haem$haematocrit) | !is.finite(haem$haematocrit)),
+                   mean(is.na(prot$proteinuria)))
+)
+miss_prop
+
+gfr$R <- ifelse(is.na(gfr), 0, 1)
+colMeans(gfr$R) #missingness only in gfr
+
+gfr_df <- gfr%>%
+  arrange(id, years) %>%
+  group_by(id) %>%
+  mutate(lag_gfr = lag(gfr))
+
+summary(glm(R[,"gfr"] ~ lag_gfr +years+failure,
+    family = binomial,
+    data = gfr_df))
+
+prot$R <- ifelse(is.na(prot), 0, 1)
+colMeans(prot$R)
+
+prot_df <- prot%>%
+  arrange(id, years) %>%
+  group_by(id) %>%
+  mutate(lag_prot = lag(proteinuria))
+
+
+summary(glm(R[,"proteinuria"] ~ lag_prot + years+failure,
+    family = binomial,
+    data = prot_df))
+
+
+haem$R <- ifelse(is.na(haem), 0, 1)
+colMeans(haem$R)
+
+haem_df <- haem%>%
+  arrange(id, years) %>%
+  group_by(id) %>%
+  mutate(lag_haem = lag(haematocrit))
+
+
+summary(glm(R[,"haematocrit"] ~ lag_haem + years+failure,
+    family = binomial,
+    data = haem_df))
+```
+# check log transformation needed
+```{r}
+library(lme4)
+
+fit_gfr <- lmer(gfr ~ ns(years,3) + (1 + years | id), data = gfr_clean)
+
+res <- resid(fit_gfr)
+plot(fitted(fit_gfr), res,
+     xlab = "Fitted values",
+     ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
