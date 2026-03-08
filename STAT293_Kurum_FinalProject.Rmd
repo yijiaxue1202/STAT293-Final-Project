@@ -10,6 +10,13 @@ library(tidyverse)
 library(ggplot2)
 library(survival)
 library(splines)
+library(nlme)
+library(GLMMadaptive)
+library(JMbayes2)
+library(knitr)
+library(kableExtra)
+library(survminer)
+
 load("ckd.rdata")
 prot<-ckd_data$prot
 haem<-ckd_data$haem
@@ -212,16 +219,514 @@ summary(glm(R[,"haematocrit"] ~ lag_haem + years+failure,
     family = binomial,
     data = haem_df))
 ```
-# check log transformation needed
+
+
+
+
+# Model Fitting
+
+## longitudinal submodels
+
 ```{r}
-library(lme4)
+# Common longitudinal dataset
 
-fit_gfr <- lmer(gfr ~ ns(years,3) + (1 + years | id), data = gfr_clean)
+joint_long <- full_join(
+  gfr %>% select(id, years, gfr),
+  haem %>% select(id, years, haematocrit),
+  by = c("id", "years")
+) %>%
+  full_join(
+    prot %>%
+      select(id, years, proteinuria) %>%
+      mutate(proteinuria = as.numeric(as.character(proteinuria))),
+    by = c("id", "years")
+  ) %>%
+  left_join(
+    surv %>% select(id, failure, fuyears, age, weight, gender) %>% distinct(id, .keep_all = TRUE),
+    by = "id"
+  ) %>%
+  arrange(id, years)
 
-res <- resid(fit_gfr)
-plot(fitted(fit_gfr), res,
-     xlab = "Fitted values",
-     ylab = "Residuals")
-abline(h = 0, col = "red")
+joint_long$gender <- factor(joint_long$gender)
+
+# GFR model (with spline)
+lme_gfr <- lme(
+  fixed = gfr ~ ns(years, df = 3), # cubic spline enters here
+  random = ~ years | id,
+  data = joint_long,
+  na.action = na.exclude,
+  control = lmeControl(opt = "optim")
+)
+
+# Haematocrit Model 
+lme_haem <- lme(
+  fixed = haematocrit ~ years,
+  random = ~ years | id,
+  data = joint_long,
+  na.action = na.exclude,
+  control = lmeControl(opt = "optim")
+)
+
+# Proteinuria Model (mixed logistic model)
+mixed_prot <- mixed_model(
+  fixed = proteinuria ~ years,
+  random = ~ 1 | id,
+  data = joint_long,
+  family = binomial(),
+  na.action = na.exclude
+)
+```
+
+##survival submodel
+
+```{r}
+surv_dat <- surv %>%
+  select(id, fuyears, failure, age, weight, gender) %>%
+  distinct(id, .keep_all = TRUE)
+
+surv_dat$gender <- factor(surv_dat$gender)
+
+cox_fit <- coxph(
+  Surv(fuyears, failure) ~ age + weight + gender,
+  data = surv_dat,
+  x = TRUE
+)
+
+```
+
+## Joint Model
+
+```{r}
+joint_fit <- jm(
+  cox_fit,
+  list(lme_gfr, lme_haem, mixed_prot),
+  time_var = "years"
+)
+summary(joint_fit)
+```
+# Model Diagnosis
+
+```{r}
+
+# 1. GFR model diagnosis
+
+# ---- create diagnostic dataframe ----
+diag_gfr <- data.frame(
+  fitted = fitted(lme_gfr, level = 0),
+  residuals = resid(lme_gfr, type = "normalized")
+)
+
+diag_gfr <- diag_gfr %>%
+  filter(!is.na(fitted), !is.na(residuals))
+
+# ---- 1A. Residuals vs fitted ----
+ggplot(diag_gfr, aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.25) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(
+    title = "GFR: Residuals vs Fitted",
+    x = "Fitted values",
+    y = "Normalized residuals"
+  ) +
+  theme_minimal()
+
+# ---- 1B. Histogram of residuals ----
+ggplot(diag_gfr, aes(x = residuals)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30,
+                 alpha = 0.6, fill = "grey70", color = "black") +
+  geom_density(linewidth = 1) +
+  labs(
+    title = "GFR: Histogram of Residuals",
+    x = "Normalized residuals",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# ---- 1C. QQ plot of residuals ----
+ggplot(diag_gfr, aes(sample = residuals)) +
+  stat_qq(alpha = 0.3) +
+  stat_qq_line(linewidth = 1, color="red") +
+  labs(
+    title = "GFR: Q-Q Plot of Residuals"
+  ) +
+  theme_minimal()
+
+
+# ---- 1D. QQ plot of random intercepts ----
+re_gfr <- ranef(lme_gfr)
+re_gfr_df <- data.frame(
+  intercept = re_gfr[, 1],
+  slope = re_gfr[, 2]
+)
+
+ggplot(re_gfr_df, aes(sample = intercept)) +
+  stat_qq(alpha = 0.4) +
+  stat_qq_line(linewidth = 1) +
+  labs(
+    title = "GFR: Q-Q Plot of Random Intercepts"
+  ) +
+  theme_minimal()
+
+
+# 2. Haematocrit model diagnosis
+diag_haem <- data.frame(
+  fitted = fitted(lme_haem, level = 0),
+  residuals = resid(lme_haem, type = "normalized")
+)
+
+diag_haem <- diag_haem %>%
+  filter(!is.na(fitted), !is.na(residuals))
+
+# ---- 2A. Residuals vs fitted ----
+ggplot(diag_haem, aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.25) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(
+    title = "Haem: Residuals vs Fitted",
+    x = "Fitted values",
+    y = "Normalized residuals"
+  ) +
+  theme_minimal()
+
+# ---- 2B. Histogram of residuals ----
+ggplot(diag_haem, aes(x = residuals)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30,
+                 alpha = 0.6, fill = "grey70", color = "black") +
+  geom_density(linewidth = 1) +
+  labs(
+    title = "Haem: Histogram of Residuals",
+    x = "Normalized residuals",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# ---- 2C. QQ plot of residuals ----
+ggplot(diag_haem, aes(sample = residuals)) +
+  stat_qq(alpha = 0.3) +
+  stat_qq_line(linewidth = 1, color="red") +
+  labs(
+    title = "Haem: Q-Q Plot of Residuals"
+  ) +
+  theme_minimal()
+
+
+# ---- 2D. QQ plot of random intercepts ----
+re_haem <- ranef(lme_haem)
+re_haem_df <- data.frame(
+  intercept = re_haem[, 1],
+  slope = re_haem[, 2]
+)
+
+ggplot(re_haem_df, aes(sample = intercept)) +
+  stat_qq(alpha = 0.4) +
+  stat_qq_line(linewidth = 1) +
+  labs(
+    title = "Haem: Q-Q Plot of Random Intercepts"
+  ) +
+  theme_minimal()
+
+
+
+# 3. Proteinuria model diagnosis
+
+## Predicted probabilities
+prot_diag <- prot_dat
+prot_diag$pred_prob <- as.numeric(predict(mixed_prot, type = "mean_subject"))
+prot_diag <- prot_diag %>%
+  filter(!is.na(pred_prob), !is.na(proteinuria))
+
+# ---- 3A. Predicted probability distribution ----
+ggplot(prot_diag, aes(x = pred_prob)) +
+  geom_histogram(bins = 30,
+                 fill = "grey70",
+                 alpha = 0.7) +
+  labs(
+    title = "Proteinuria: Predicted Probability Distribution",
+    x = "Predicted probability"
+  ) +
+  theme_minimal()
+
+
+# ---- 3B. Observed vs predicted ----
+
+ggplot(prot_diag, aes(x = pred_prob, y = proteinuria)) +
+  geom_jitter(height = 0.05, alpha = 0.2) +
+  labs(
+    title = "Proteinuria: Observed vs Predicted",
+    x = "Predicted probability",
+    y = "Observed proteinuria"
+  ) +
+  theme_minimal()
+
+
+# 4. Cox model diagnosis
+ph_test <- cox.zph(cox_fit)
+
+print(ph_test)
+
+
+
+# ---- 4A. Schoenfeld residuals ----
+plot(ph_test)
+
+summary(joint_fit)
+library(survminer)
+
+# ---- 4B.log(-log) survival curves ---- (checking the survival models's PH assumption is valid)
+ggsurvplot(
+  survfit(Surv(fuyears, failure) ~ gender, data = surv_dat),
+  fun = "cloglog"
+)
+## The curves for male and female subjects were approximately parallel over time, suggesting that the proportional hazards assumption for gender is reasonable.
+```
+# Model Estimate (just for reference)
+
+```{r}
+
+# # ----------------------------
+# # GFR longitudinal submodel
+# # ----------------------------
+# # fixed effects
+# gfr_fixef <- summary(lme_gfr)$tTable
+# gfr_fixef
+# 
+# # random-effects variance-covariance
+# VarCorr(lme_gfr)
+# 
+# 
+# # ----------------------------
+# # Haematocrit longitudinal submodel
+# # ----------------------------
+# # fixed effects
+# haem_fixef <- summary(lme_haem)$tTable
+# haem_fixef
+# 
+# # random-effects variance-covariance
+# VarCorr(lme_haem)
+# 
+# # ----------------------------
+# # Proteinuria longitudinal submodel
+# # ----------------------------
+# 
+# # fixed effects table
+# prot_coef <- summary(mixed_prot)$coef_table
+# prot_coef
+# 
+# # random effects
+# summary(mixed_prot)$D
+# 
+# # ----------------------------
+# # Joint model summary
+# # ----------------------------
+# s <- summary(joint_fit)
+# 
+# # survival part of the joint model
+# s$Survival
+# 
+# assoc_tab <- s$Survival[grep("^value\\(", rownames(s$Survival)), , drop = FALSE]
+# assoc_tab
+# 
+# # baseline covariates only (exclude value(...) rows)
+# surv_tab <- s$Survival[!grepl("^value\\(", rownames(s$Survival)), , drop = FALSE]
+# surv_tab
+
+```
+
+
+# Results
+
+```{r}
+# =========================================================
+# TABLE 1: Longitudinal submodels
+# =========================================================
+
+# ----- GFR fixed effects -----
+gfr_fixef <- summary(lme_gfr)$tTable
+
+gfr_table <- data.frame(
+  Outcome = "GFR",
+  Term = rownames(gfr_fixef),
+  Estimate = gfr_fixef[, "Value"],
+  SE = gfr_fixef[, "Std.Error"],
+  Statistic = gfr_fixef[, "t-value"],
+  P_value = gfr_fixef[, "p-value"],
+  row.names = NULL
+)
+
+# make names cleaner
+gfr_table$Term <- c(
+  "Intercept",
+  "Spline(years) 1",
+  "Spline(years) 2",
+  "Spline(years) 3"
+)
+
+# ----- Haematocrit fixed effects -----
+haem_fixef <- summary(lme_haem)$tTable
+
+haem_table <- data.frame(
+  Outcome = "Haematocrit",
+  Term = rownames(haem_fixef),
+  Estimate = haem_fixef[, "Value"],
+  SE = haem_fixef[, "Std.Error"],
+  Statistic = haem_fixef[, "t-value"],
+  P_value = haem_fixef[, "p-value"],
+  row.names = NULL
+)
+
+# clean names if desired
+haem_table$Term[haem_table$Term == "(Intercept)"] <- "Intercept"
+haem_table$Term[haem_table$Term == "years"] <- "Years since transplant"
+
+# ----- Proteinuria fixed effects -----
+prot_coef <- summary(mixed_prot)$coef_table
+
+prot_table <- data.frame(
+  Outcome = "Proteinuria",
+  Term = rownames(prot_coef),
+  Estimate = prot_coef[, "Estimate"],
+  SE = prot_coef[, "Std.Err"],
+  Statistic = prot_coef[, "z-value"],
+  P_value = prot_coef[, "p-value"],
+  row.names = NULL
+)
+prot_table$Term[prot_table$Term == "(Intercept)"] <- "Intercept"
+prot_table$Term[prot_table$Term == "years"] <- "Years since transplant"
+
+# ----- Combine into one table -----
+long_table <- bind_rows(gfr_table, haem_table, prot_table)
+
+# nicer p-values
+long_table$P_value <- ifelse(long_table$P_value < 0.001, "<0.001",
+                             sprintf("%.3f", long_table$P_value))
+long_table <- long_table %>%
+  mutate(
+    Estimate = round(Estimate, 3),
+    SE = round(SE, 3),
+    Statistic = round(Statistic, 2)
+  )
+
+kable(
+  long_table,
+  caption = "Fixed-effects estimates for the longitudinal submodels.",
+  col.names = c("Outcome", "Term", "Estimate", "SE", "Statistic", "P-value"),
+  align = c("l", "l", "r", "r", "r", "r"),
+  booktabs = TRUE
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+# =========================================================
+# TABLE 2: Joint Survival Model
+# =========================================================
+
+s <- summary(joint_fit)
+
+joint_surv_table <- data.frame(
+  Term = rownames(s$Survival),
+  Estimate = s$Survival[, "Mean"],
+  SE = s$Survival[, "StDev"],
+  CI_lower = s$Survival[, "2.5%"],
+  CI_upper = s$Survival[, "97.5%"],
+  P_value = s$Survival[, "P"],
+  Rhat = s$Survival[, "Rhat"],
+  row.names = NULL
+)
+
+joint_surv_table$Term <- c(
+  "Age",
+  "Weight",
+  "Male",
+  "Current GFR",
+  "Current Haematocrit",
+  "Current Proteinuria"
+)
+
+joint_surv_table$P_value <- ifelse(joint_surv_table$P_value < 0.001, "<0.001",
+                                   sprintf("%.3f", joint_surv_table$P_value))
+
+
+kable(
+  joint_surv_table,
+  caption = "Posterior summaries for the survival component of the joint model.",
+  col.names = c("Term", "Estimate", "SE", "2.5%", "97.5%", "P-value", "Rhat"),
+  align = c("l", "r", "r", "r", "r", "r", "r"),
+  booktabs = TRUE,
+  escape = FALSE
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+
+# =========================================================
+# TABLE 3: Hazard Ratios (exp of table 2)
+# =========================================================
+
+hr_table <- data.frame(
+  Term = rownames(s$Survival),
+  HR = exp(s$Survival[, "Mean"]),
+  CI_lower = exp(s$Survival[, "2.5%"]),
+  CI_upper = exp(s$Survival[, "97.5%"]),
+  P_value = s$Survival[, "P"],
+  row.names = NULL
+)
+
+hr_table$Term <- c(
+  "Age",
+  "Weight",
+  "Male",
+  "Current GFR",
+  "Current Haematocrit",
+  "Current Proteinuria"
+)
+
+hr_table$P_value <- ifelse(hr_table$P_value < 0.001, "<0.001",
+                           sprintf("%.3f", hr_table$P_value))
+
+kable(
+  hr_table,
+  caption = "Hazard ratios for baseline covariates and association parameters in the joint model.",
+  col.names = c("Term", "HR", "2.5%", "97.5%", "P-value"),
+  align = c("l", "r", "r", "r", "r"),
+  booktabs = TRUE,
+  escape = FALSE
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+
+fit_km <- survfit(Surv(fuyears, failure) ~ gender, data = surv_dat)
+
+# (this plot may or maynot used in our result)
+ggsurvplot(
+  fit_km,
+  risk.table = TRUE,
+  conf.int = TRUE,
+  xlab = "Years since transplant",
+  ylab = "Survival probability",
+  legend.title = "Gender"
+)
+
+# forest plot of hazard ratio, also is valid for secondary research question
+ggplot(hr_table, aes(x = Term, y = HR)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip() +
+  labs(
+    title = "Hazard ratios from the joint model",
+    y = "Hazard ratio",
+    x = ""
+  ) +
+  theme_minimal()
 ```
 
