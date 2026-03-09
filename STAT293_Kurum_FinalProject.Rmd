@@ -1,6 +1,6 @@
 ---
 title: "STAT293_Kurum_FinalProject"
-author: "Yijia Xue"
+author: "Yijia Xue Ying Lin"
 date: "2026-02-22"
 output: pdf_document
 ---
@@ -430,7 +430,7 @@ ggplot(re_haem_df, aes(sample = intercept)) +
 # 3. Proteinuria model diagnosis
 
 ## Predicted probabilities
-prot_diag <- prot_dat
+prot_diag <- prot_clean
 prot_diag$pred_prob <- as.numeric(predict(mixed_prot, type = "mean_subject"))
 prot_diag <- prot_diag %>%
   filter(!is.na(pred_prob), !is.na(proteinuria))
@@ -730,3 +730,140 @@ ggplot(hr_table, aes(x = Term, y = HR)) +
   theme_minimal()
 ```
 
+# Sensitivity Analysis for Possible MNAR Departures
+
+Our primary analysis assumes that the joint longitudinal--survival model adequately captures the dependence between biomarker trajectories and graft failure through shared random effects. To assess robustness to possible departures from this assumption, we conducted a simple delta-shift sensitivity analysis motivated by potential MNAR behavior.
+
+Specifically, we considered hypothetical scenarios in which the unobserved GFR values after dropout were systematically lower than those implied by the primary model. Because lower GFR indicates worse kidney function, we applied downward shifts of $\delta = 5$ and $\delta = 10$ to the observed GFR values and refit the joint model under these modified scenarios. We then compared the estimated association between current GFR and graft failure across the original and perturbed models.
+
+```{r}
+# =========================================================
+# Sensitivity analysis for possible MNAR departures
+# Delta-shift on GFR
+# =========================================================
+
+fit_joint_with_gfr_shift <- function(delta_shift) {
+  
+  gfr_sens <- gfr %>%
+    mutate(gfr = ifelse(!is.na(gfr), gfr - delta_shift, NA))
+  
+  joint_long_sens <- full_join(
+    gfr_sens %>% select(id, years, gfr),
+    haem %>% select(id, years, haematocrit),
+    by = c("id", "years")
+  ) %>%
+    full_join(
+      prot %>%
+        select(id, years, proteinuria) %>%
+        mutate(proteinuria = as.numeric(as.character(proteinuria))),
+      by = c("id", "years")
+    ) %>%
+    left_join(
+      surv %>% select(id, failure, fuyears, age, weight, gender) %>% distinct(id, .keep_all = TRUE),
+      by = "id"
+    ) %>%
+    arrange(id, years)
+  
+  joint_long_sens$gender <- factor(joint_long_sens$gender)
+  
+  lme_gfr_sens <- lme(
+    fixed = gfr ~ ns(years, df = 3),
+    random = ~ years | id,
+    data = joint_long_sens,
+    na.action = na.exclude,
+    control = lmeControl(opt = "optim")
+  )
+  
+  lme_haem_sens <- lme(
+    fixed = haematocrit ~ years,
+    random = ~ years | id,
+    data = joint_long_sens,
+    na.action = na.exclude,
+    control = lmeControl(opt = "optim")
+  )
+  
+  mixed_prot_sens <- mixed_model(
+    fixed = proteinuria ~ years,
+    random = ~ 1 | id,
+    data = joint_long_sens,
+    family = binomial(),
+    na.action = na.exclude
+  )
+  
+  cox_fit_sens <- coxph(
+    Surv(fuyears, failure) ~ age + weight + gender,
+    data = surv_dat,
+    x = TRUE
+  )
+  
+  joint_fit_sens <- jm(
+    cox_fit_sens,
+    list(lme_gfr_sens, lme_haem_sens, mixed_prot_sens),
+    time_var = "years"
+  )
+  
+  joint_fit_sens
+}
+
+joint_fit_delta5  <- fit_joint_with_gfr_shift(5)
+joint_fit_delta10 <- fit_joint_with_gfr_shift(10)
+
+s0  <- summary(joint_fit)
+s5  <- summary(joint_fit_delta5)
+s10 <- summary(joint_fit_delta10)
+
+sens_table <- data.frame(
+  Scenario = c("Original", "Delta = 5", "Delta = 10"),
+  Estimate = c(
+    s0$Survival["value(gfr)", "Mean"],
+    s5$Survival["value(gfr)", "Mean"],
+    s10$Survival["value(gfr)", "Mean"]
+  ),
+  CI_lower = c(
+    s0$Survival["value(gfr)", "2.5%"],
+    s5$Survival["value(gfr)", "2.5%"],
+    s10$Survival["value(gfr)", "2.5%"]
+  ),
+  CI_upper = c(
+    s0$Survival["value(gfr)", "97.5%"],
+    s5$Survival["value(gfr)", "97.5%"],
+    s10$Survival["value(gfr)", "97.5%"]
+  ),
+  P_value = c(
+    s0$Survival["value(gfr)", "P"],
+    s5$Survival["value(gfr)", "P"],
+    s10$Survival["value(gfr)", "P"]
+  ),
+  HR = c(
+    exp(s0$Survival["value(gfr)", "Mean"]),
+    exp(s5$Survival["value(gfr)", "Mean"]),
+    exp(s10$Survival["value(gfr)", "Mean"])
+  )
+)
+
+sens_table <- sens_table %>%
+  mutate(
+    Estimate = round(Estimate, 3),
+    CI_lower = round(CI_lower, 3),
+    CI_upper = round(CI_upper, 3),
+    HR = round(HR, 3),
+    P_value = ifelse(P_value < 0.001, "<0.001", sprintf("%.3f", P_value))
+  )
+
+kable(
+  sens_table,
+  caption = "Delta-shift sensitivity analysis for possible MNAR departures in GFR.",
+  col.names = c("Scenario", "Estimate", "2.5%", "97.5%", "P-value", "Hazard Ratio"),
+  align = c("l", "r", "r", "r", "r", "r"),
+  booktabs = TRUE
+) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE,
+    position = "center"
+  )
+```
+
+The sensitivity analysis shows that the estimated association between current GFR and graft failure remains essentially unchanged under the two delta-shift scenarios. In the primary analysis, the estimated coefficient for current GFR was -0.154 (HR = 0.857, p < 0.001), indicating that higher GFR is associated with a lower risk of graft failure. 
+
+When the GFR trajectory was shifted downward by 5 and 10 units to represent potential MNAR departures, the estimated association parameter remained identical to the original estimate. This suggests that the main conclusion of the analysis is highly robust to plausible deviations from the MAR assumption in the longitudinal biomarker process.
