@@ -100,9 +100,9 @@ $$
 
 where
 
-* (X_i) represents baseline covariates
-* (m_{i,\cdot}(t)) are the estimated biomarker trajectories
-* (\alpha_k) quantify the association between biomarkers and graft failure risk. 
+* $(X_i)$ represents baseline covariates
+* $(m_{i,\cdot}(t))$ are the estimated biomarker trajectories
+* $(\alpha_k)$ quantify the association between biomarkers and graft failure risk. 
 
 ---
 
