@@ -3,8 +3,8 @@
 ## Chronic Kidney Disease (CKD) Transplant Study
 
 **Authors:** Yijia Xue, Ying Lin
-**Course:** STAT 293 – Advanced Statistical Methods
-**Date:** February 2026
+**Course:** STAT 293
+**Date:** March 2026
 
 ---
 
@@ -12,7 +12,7 @@
 
 This project investigates the association between **longitudinal biomarker trajectories** and **renal graft failure** among kidney transplant patients.
 
-We apply **joint longitudinal–survival modeling** to assess how the evolution of multiple biomarkers over time influences the risk of graft failure. This framework allows us to simultaneously model repeated biomarker measurements and survival outcomes while accounting for informative dropout and cross-biomarker dependence.
+We apply **joint longitudinal–survival modeling** to assess how the evolution of multiple biomarkers over time influences the risk of graft failure. This framework allows us to simultaneously model repeated biomarker measurements and survival outcomes while accounting for cross-biomarker dependence.
 
 The primary objective is to quantify the strength of the association between biomarker trajectories and the hazard of renal graft failure. 
 
@@ -121,23 +121,12 @@ Therefore, the primary analysis assumes **Missing at Random (MAR)** and uses a j
 This project extends standard course methods by implementing a **multivariate joint longitudinal–survival model** that:
 
 * simultaneously models multiple correlated biomarkers
-* accounts for informative dropout through shared random effects
 * incorporates **nonlinear time effects using spline modeling**. 
 
----
+## Sensitivity Analysis
 
-## Repository Structure
-
-```
-STAT293-Final-Project
-│
-├── data/            # CKD datasets
-├── R/               # data processing and model scripts
-├── figures/         # exploratory plots and model diagnostics
-├── results/         # model outputs and tables
-├── report/          # final report and slides
-└── README.md
-```
+To test the robustness of **MAR** mechanism and considering a possible **MNAR** depatures, simple $\delta$ shift sensitivity analysis is performed.
+Post drop-out GFR values are downward shifted by $\delta=5$ and $\delta=10$, and the joint model is then refit under these perturbed scenarios.
 
 ---
 
@@ -145,14 +134,17 @@ STAT293-Final-Project
 
 The analysis is conducted in **R**, using packages such as:
 
-* `lme4`
-* `JMbayes`
+* `JMbayes2`
+* `GLMMadaptive`
+* `tidyverse`
 * `survival`
+* `survminer`
 * `splines`
+* `nlme`
 * `ggplot2`
 
 ---
 
 ## References
 
-Course project for **STAT 293 – Advanced Statistical Methods**, University of California, Riverside.
+Course project for **STAT 293**, University of California, Riverside.
