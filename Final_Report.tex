@@ -1,0 +1,336 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{setspace}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{hyperref}
+\usepackage{indentfirst}
+\usepackage[font=small]{caption}
+
+\title{Joint Modeling of Longitudinal Biomarkers and Renal Graft Failure\\ Report}
+\author{Yijia Xue, Ying Lin\\
+\small Github repository: \url{https://github.com/yijiaxue1202/STAT293-Final-Project}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\doublespacing
+
+\section{Introduction}
+Renal transplant with a graft is an essential treatment for patients who suffer from chronic kidney disease (CKD), which patients would experience loss of renal function over a period of months or years through five stages. In each stage of the progression, the glomerular filtration rate (GFR) would have abnormally low value and progressively worsen performance. Proteinuria and haematocrit are other two biomakers which reflects the functionality of kidney. Specifically, proteinuria assesses the kidneys' ability to retain proteins in the blood rather than excrete them in the urine. Haematocrit assesses whether the kidneys produce sufficient erythropoietin, the hormone that regulates red blood cell production. Since these three biomarkers are considered likely related to graft failure for patients who have renal transplantation, we would like to assess the strength and significance of the association between patient-specific longitudinal biomarker trajectories (proteinuria, haematocrit, and gfr) and time-to-renal graft failure using joint longitudinal--survival modeling as our primary analysis. Furthermore, we are also interested in discovering which biomarker contributes the most to graft failure risk after accounting for the others as our secondary analysis. 
+
+\section{Data}
+
+The original dataset is from the University Hospital Gasthuisberg from the Catholic University of Leuven (Belgium) between 21 January 1983 and 16 August 2000. The dataset contains the 3 repeated biomarker measurements from patients who underwent renal transplantation that survived for at least 1 year. The dataset we used for our study is a subset of the original dataset.\\
+
+The dataset contains 4 sub-datasets: prot (binary), haem (continuous), gfr (continuous), and surv, which records repeated measurements of proteinuria, haematocrit, and gfr, and patient's survival outcomes, respectively. Among the four sub-datasets, prop, haem, and gfr are longitudinal datasets, and surv is survival datasets. All sub-datasets includes subjects' id, baseline covariate (age, gender, weight), maximum follow up time, and failure indicator The 3 longitudinal datasets contains 2 further columns: observed time point and biomarker measurement. There are 407 subjects included in our dataset, with about $31\%$ graft failure rate, and the median follow-up time is 11.9 years. The total repeated measurements for all subjects ranges from 53,144 to 70,514 for the 3 longitudinal datasets.
+
+\section{Exploratory Data Analysis}
+Histograms for distributions of the two continuous biomarkers (haematocrit and GFR) were plotted to exam the normality of the data  (Figure~\ref{fig:1}--\ref{fig:2}). Distrubution of haematocrit is approximately symmetric while distribution of GFR shows slightly right-skewed. One possible approach to adjust is log transformation. However, we decided to keep the data on its original scale because the skewness is mild, and adding log transformation would complicate the result interpretation.
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{Haem_Dist.png}
+    \caption{\footnotesize Distribution of Haematocrit}
+    \label{fig:1}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{GFR_dist.png}
+    \caption{\footnotesize Distribution of GFR}
+    \label{fig:2}
+\end{minipage}
+\end{figure}
+
+Linearity and heterogeneity of haematocrit and GFR was checked through spaghetti plots by plotting biomarker trajectories over time (Figure~\ref{fig:3}--\ref{fig:4}). At starting time, subjects have a wide range of initial measurement values, and their rate of change differs throughout the follow-ups. Therefore, heterogeneity in both baseline and slopes can be assumed. To check the linearity of the data, we added a LOESS smooth curve to illustrate the population trend (Figure~\ref{fig:5}). Haematocrit shows approximate linearity, while GFR has signs of non-linearity. In order to address the non-linearity, we allow flexible time effects for GFR in the mixed-effects models. One common way to address this issue is to add a natural cubic spline, and non-linearity trend was well-fixed after adding the cubic spline which was verified through the GFR trajectories over time plot.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{haem_overtime.png}
+    \caption{\footnotesize Haematocrit Trajectories over time}
+    \label{fig:3}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{gfr_overtime.png}
+    \caption{\footnotesize GFR Trajectories over time}
+    \label{fig:4}
+\end{minipage}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{gfr_afterspline.png}
+    \caption{\footnotesize GFR Trajectories over time (spline added)}
+    \label{fig:5}
+\end{minipage}
+\end{figure}
+
+To discover the time-dependent association, smooth trajectory curves stratified by failure status was plotted for haematocrit and GFR (Figure~\ref{fig:6}--\ref{fig:7}). Both plots show distinct difference of biomarker measurements bewteen the two groups. Among subjects experienced graft failure, overall lower haematocrit and GFR were measured. For proteinuria, mean proteinuria over years were plotted (Figure~\ref{fig:8}), and fluctuations are noticiable, indicating that there are dynamic changes in the kidney function indicators. Combine these findings, biomarker trajectories are likely associated with graft failure, and such relationship might depend on how biomarker evolve over time.
+
+\begin{figure}[H]
+\centering
+
+\begin{minipage}{0.32\linewidth}
+\centering
+\includegraphics[width=\linewidth]{haem_trendFail.png}
+\caption{\scriptsize Haematocrit trend by failure}
+\label{fig:6}
+\end{minipage}
+\hfill
+\begin{minipage}{0.32\linewidth}
+\centering
+\includegraphics[width=\linewidth]{gfr_trendFail.png}
+\caption{\scriptsize GFR trend by failure}
+\label{fig:7}
+\end{minipage}
+\hfill
+\begin{minipage}{0.32\linewidth}
+\centering
+\includegraphics[width=\linewidth]{Prop_prev.png}
+\caption{\scriptsize Mean Proteinuria over time}
+\label{fig:8}
+\end{minipage}
+
+\end{figure}
+
+
+For the survival dataset, we plotted the Kaplan-Meier curve (Figure~\ref{fig:9}) for graft survival to verify using survival model is appropriate. From the graph, We observe that the estimated survival probability decreases gradually over follow-up, indicating that graft failures occur throughout the study period rather than only at early times. Therefore, we are confident in modeling the hazard function using a time-to-event model.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{KM_curve.png}
+    \caption{\footnotesize Kaplan-Meier curve}
+    \label{fig:9}
+\end{minipage}
+\end{figure}
+
+
+There are approximatly $27\%$ missingness in the longitudinal biomarker measurement. We concluded that Missing Completely At Random (MCAR) is unlikely since the missness depends on both proior biomarker values and graft failure status, by fitting a simple logistic regression. Thus, Missing At Random (MAR) assumption is plausible, and will be used towards our analysis. Our proposed joint model is fitted under a maximum likelihood framework, hence a complete-case longitudinal dataset was used as our final dataset. For the possibility of Missing Not At Random (MNAR), we will test the robustness of our current MAR assumption in the later sensitivity analysis.
+
+
+\section{Model}
+Primary analysis will use joint longitudinal-survival modeling to account for time-varying biomarker trajectories, cross-biomarker dependence, and longitudinal dropout depending on failure risk.
+\subsection*{Longitudinal Submodels}
+
+\textbf{GFR model}: $\text{GFR}_{ij}
+=\beta_{0}^{(g)} + f(t_{ij}) + b_{0i}^{(g)} + b_{1i}^{(g)} t_{ij} + \varepsilon_{ij}^{(g)}$\\
+
+\noindent \textbf{Haematocrit model}: $\text{Haem}_{ij}
+=\beta_{0}^{(h)} + \beta_{1}^{(h)} t_{ij} + b_{0i}^{(h)} + b_{1i}^{(h)} t_{ij} + \varepsilon_{ij}^{(h)}$\\
+
+\noindent\textbf{Proteinuria model}: $\text{logit}\{P(\text{Prot}_{ij}=1)\}
+=\beta_{0}^{(p)} + \beta_{1}^{(p)} t_{ij} + b_{0i}^{(p)}$
+
+\begin{itemize}
+\item $t_{ij}$ : time since transplant for subject $i$ at visit $j$
+\item $f(t)$ : natural cubic spline function of time
+\item $b_{0i}, b_{1i}$ : subject-specific random intercepts and slopes
+\item $\varepsilon_{ij} \sim N(0,\sigma^2)$ : measurement error
+\end{itemize}
+
+\subsection*{Survival Submodel}
+\[
+h_i(t) = h_0(t)\exp\left\{
+\gamma^\top X_i
++ \alpha_1 m_{i,\mathrm{gfr}}(t)
++ \alpha_2 m_{i,\mathrm{haem}}(t)
++ \alpha_3 m_{i,\mathrm{prot}}(t)
+\right\}.
+\]
+
+\begin{itemize}
+\item $X_i$: baseline covariates (age, weight, gender)
+
+\item $m_{i,\mathrm{gfr}}(t)$, $m_{i,\mathrm{haem}}(t)$, $m_{i,\mathrm{prot}}(t)$: current predicted biomarker values
+
+\item $\alpha_1, \alpha_2, \alpha_3$: association parameters linking biomarker trajectories to graft failure risk
+\end{itemize}
+
+GFR and Haematocrit models are mixed-effect models. For the GFR model, we added a cubic spline of time, $f(t_{ij})$, to account for nonlinearity. Subject-specific random intercepts and slopes were added to both models. The proteinuria model is a simple logistic model with random slopes. We did not include baseline covariates in any of the mixed-effects models. The reason is that the random intercept has already accounted for heterogeneity at the baseline level, and the survival submodel also incorporates the baseline covariates. Adding the baseline covariates to the model in excess will increase bias in the analysis. 
+
+Longitudinal submodels were fitted using \textit{lme()} under \textit{nlme} package. Survival submodel was fitted using \textit{coxph()} under \textit{survival} package. The joint model was fitted using \textit{jm()} under \textit{JMbayes2} package.
+
+\section{Model Diagnostics}
+For the two continuous biomarker measurements, residual verses fitted values were plotted (Figure~\ref{fig:10}--\ref{fig:11}). In the residual plot of GFR, it seems like the residuals follow a certain pattern instead of randomly scattered around 0. However, one possible reason is that the dataset is large in scale, therefore it makes the residual points look extremely dense in a plot. Also, we have adjusted non-linearity by adding the cubic spline in the model, which non-linearity is a major reason for residuals following a pattern. Therefore, we still want to ensure that the longitudinal model is appropriately specified. QQ plots were also made (Figure~\ref{fig:12}) to check normality. The result is in concordance to what we found in EDA.
+
+
+\begin{figure}[H]
+\centering
+
+\begin{minipage}{0.32\linewidth}
+\centering
+\includegraphics[width=\linewidth]{GFR_residual.png}
+\caption{\scriptsize Residual vs. Fitted}
+\label{fig:10}
+\end{minipage}
+\hfill
+\begin{minipage}{0.32\linewidth}
+\centering
+\includegraphics[width=\linewidth]{GFR_Red_QQ.png}
+\caption{\scriptsize QQ plot of residuals}
+\label{fig:11}
+\end{minipage}
+\hfill
+\begin{minipage}{0.32\linewidth}
+\centering
+\includegraphics[width=\linewidth]{GFR_RI_QQ.png}
+\caption{\scriptsize QQ plot of random intercept}
+\label{fig:12}
+\end{minipage}
+
+\end{figure}
+For the binary longitudinal outcome (proteinuria), model diagnostics was performed by plotting the predicted probabilities versus the observed outcomes (Figure~\ref{fig:13}). From the plot, the predicted probabilities is consistent with the observed binary responses. 
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.6\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{proteinuria_obs_pred.png}
+    \caption{\footnotesize Proteinuria: observed vs. predicted}
+    \label{fig:13}
+\end{minipage}
+\end{figure}
+
+
+For the survival model, schoenfeld residual tests and log-log survival curves were used to exam the proportional hazard assumption (Figure~\ref{fig:14}--\ref{fig:15}). The global test for schoenfeld residual was not statistical significant (p=0.38). The log-log survival curve grouped by gender are approximately parallel. Together of the two result, it shows there's no strong evidence of the proportional hazard violation.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{schoenfeld_plot2.png}
+    \caption{\footnotesize Schoenfeld residual for age}
+    \label{fig:14}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{loglogcurve.png}
+    \caption{\footnotesize Log(-log) survival curve by gender}
+    \label{fig:15}
+\end{minipage}
+\end{figure}
+
+\section{Result}
+\FloatBarrier
+
+\subsection*{Longitudinal Submodel}
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{10pt}
+\begin{tabular}{llrrrr}
+\toprule
+Outcome & Term & Estimate & SE & Statistic & P-value \\
+\midrule
+GFR & Intercept & 41.546 & 0.739 & 56.25 & $<0.001$ \\
+GFR & Spline(years) 1 & -16.066 & 1.874 & -8.57 & $<0.001$ \\
+GFR & Spline(years) 2 & -18.468 & 3.886 & -4.75 & $<0.001$ \\
+GFR & Spline(years) 3 & -39.860 & 4.243 & -9.39 & $<0.001$ \\
+Haematocrit & Intercept & 33.238 & 0.202 & 164.60 & $<0.001$ \\
+Haematocrit & Years since transplant & 0.659 & 0.039 & 16.97 & $<0.001$ \\
+Proteinuria & Intercept & -3.249 & 0.086 & -37.60 & $<0.001$ \\
+Proteinuria & Years since transplant & 0.108 & 0.005 & 22.69 & $<0.001$ \\
+\bottomrule
+\end{tabular}
+\caption{Estimated fixed effects from the longitudinal submodels for GFR, haematocrit, and proteinuria.}
+\label{tab:longitudinal}
+\end{table}
+
+For the longitudinal submodels, the estimated fixed effects describe the trajectories of the three biomarkers over time after transplantation. For GFR, the three spline terms for time are all statistically significant ($p<0.001$), suggesting that the trajectory of GFR over time is nonlinear. For haematocrit, the coefficient for years since transplant is positive and statistically significant ($p<0.001$), indicating that haematocrit tends to increase over time after the renal transplantation. Protinuria yields similar result as haematocrit, but slightly lower increase over time.
+
+\FloatBarrier
+
+\subsection*{Joint Survival Model}
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{8pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Term & Estimate & SE & 2.5\% & 97.5\% & P-value & Rhat \\
+\midrule
+Age & -0.0481639 & 0.0131408 & -0.0742139 & -0.0230315 & $<0.001$ & 1.020732 \\
+Weight & 0.0559762 & 0.0121742 & 0.0329657 & 0.0797147 & $<0.001$ & 1.015349 \\
+Male & 0.3894772 & 0.2332357 & -0.0811190 & 0.8465381 & 0.102 & 1.003464 \\
+Current GFR & -0.1539577 & 0.0100984 & -0.1740105 & -0.1347000 & $<0.001$ & 1.165563 \\
+Current Haematocrit & 0.1274019 & 0.0245000 & 0.0791836 & 0.1762667 & $<0.001$ & 1.037708 \\
+Current Proteinuria & 0.2255337 & 0.0755476 & 0.0783196 & 0.3758873 & 0.004 & 1.004879 \\
+\bottomrule
+\end{tabular}
+}
+\caption{Posterior summaries for the survival submodel of the joint model.}
+\label{tab:survival}
+\end{table}
+
+For the survival component of the joint model, the posterior summaries describe the association between baseline covariates, current biomarker values, and the hazard of graft failure. Age has a negative and statistically significant effect ($p<0.001$), indicating older age is associated with lower risk of graft failure. Weight shows the opposite association. Current GFR is negatively related to graft failure risk, suggesting that lower GFR value are associated with a higher hazard of graft failure. Hamatocrit and Proteinuria yields the opposite association with higher risk of graft failure. 
+
+Since the posterior estimates were obtained using Markov Chain Monte Carlo sampling, "Rhat" assess convergence of MCMC chains in the Bayesian estimation. In the table, all estimates have Rhat value very close to 1 expect Current GFR, which indicates the chains mixed well and the posterior summaries are reliable. For GFR, Rhat is 1.166, suggesting the chain did not exploring the same space many times during the mixing. One possible explaination could be high correlation between longitudinal and survival parameters.
+
+\FloatBarrier
+\subsection*{Hazard Ratios}
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{10pt}
+\begin{tabular}{lrrrr}
+\toprule
+Term & HR & 2.5\% & 97.5\% & P-value \\
+\midrule
+Age & 0.9529776 & 0.9284731 & 0.9772317 & $<0.001$ \\
+Weight & 1.0575726 & 1.0335151 & 1.0829780 & $<0.001$ \\
+Male & 1.4762088 & 0.9220839 & 2.3315612 & 0.102 \\
+Current GFR & 0.8573083 & 0.8402881 & 0.8739781 & $<0.001$ \\
+Current Haematocrit & 1.1358734 & 1.0824030 & 1.1927561 & $<0.001$ \\
+Current Proteinuria & 1.2529913 & 1.0814683 & 1.4562830 & 0.004 \\
+\bottomrule
+\end{tabular}
+\caption{Hazard ratios with 95\% credible intervals derived from the joint survival model.}
+\label{tab:hazard_ratio}
+\end{table}
+\FloatBarrier
+
+Table 3 presents the hazard ratios which were derived from Table 2 by taking the exponential of the estimates. Hazard Ratio larger than 1 indicates higher value of the covairate is associated with increased hazard of graft failure. GFR has hazard ratio less than 1, showing that is has a protective association with increased hazard.
+
+Among the three biomarkers, Proteinuria has the highest hazard ratio, which this also answers our secondary research question that Proteinuria has the largest harmful association with graft failure.
+
+\section{Sensitivity Analysis}
+To exam the possibility of Missing Not At Random, we performed sensitiviy analysis using $\delta-\text{shift}$ method to test the robustness of our current MAR assumption. We decreased post-dropout GFR values by $\delta=5$ and $\delta=10$, and the joint model was refitted under these perturbed scenarios. As a result, the estimated association between current GFR and graft failure remains unchanged to our original analysis. Therefore, our sensitivity analysis suggests that it is highly robust to plausible deviations from the MAR assumption in the longitudinal biomarker process.
+
+\section{Conclusion}
+In this study, we applied a joint longitudinal–survival modeling framework to investigate the relationship between biomarker trajectories and the risk of renal graft failure. The results show that the current values of the biomarkers are significantly associated with graft failure risk. In particular, lower GFR, higher haematocrit, and proteinuria are associated with a higher hazard of graft failure. Among the three biomarkers, proteinuria shows the strongest association with graft failure, answering our secondary research question. Overall, the joint modeling approach delivers a useful structure for understanding how longitudinal biomarker evolution relates to long-term survival outcomes in renal transplant patients.
+
+\section*{Contribution}
+Yijia Xue and Ying Lin contributed to this project in equal amount of effort. Yijia was responsible for EDA and model fitting, and Ying was responsible for Model diagnostics and results. We split the R coding, final report, and presentation slide in accordance to our responsibility described above. We both contributed to creating the GitHub repository.
+
+\section*{References}
+
+Fieuws, S., Verbeke, G., Maes, B., \& Vanrenterghem, Y. (2008).
+Predicting renal graft failure using multivariate longitudinal profiles.
+\textit{Biostatistics}, 9(3), 419–431.
+
+Rizopoulos, D. (2012).
+\textit{Joint Models for Longitudinal and Time-to-Event Data: With Applications in R}.
+Chapman \& Hall/CRC.
+
+Rizopoulos, D. (2021).
+JMbayes2: Extended Joint Models for Longitudinal and Time-to-Event Data.
+R package documentation.
+\end{document}
