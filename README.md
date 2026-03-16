@@ -136,24 +136,26 @@ The joint model was then refitted to evaluate the stability of the estimated ass
 
 ---
 
-# Repository Structure
-STAT293-Final-Project
-│
-├── STAT293_Kurum_FinalProject.Rmd
-│ Main analysis file containing all modeling code
-│
-├── STAT293_Final_Project_presentation.pdf
-│ Final presentation slides
-│
-├── STAT293_Final_Project_Report.pdf
-│ Final report
-│
-├── Final_Report.tex
-│ Latex file to knit final report
-│
-└── README.md
-Project documentation
+## Repository Structure
 
+STAT293-Final-Project  
+│  
+├── STAT293_Kurum_FinalProject.Rmd  
+│   Main analysis script containing data preprocessing, exploratory analysis,  
+│   model fitting, and sensitivity analysis. All figures and results in the  
+│   report are generated from this file.  
+│  
+├── STAT293_Final_Project_presentation.pdf  
+│   Slides used for the final class presentation.  
+│  
+├── STAT293_Final_Project_Report.pdf  
+│   Final written report of the project.  
+│  
+├── Final_Report.tex  
+│   LaTeX source file used to generate the final report.  
+│  
+└── README.md  
+    Documentation describing the project and instructions for reproducing the analysis.
 
 ---
 
