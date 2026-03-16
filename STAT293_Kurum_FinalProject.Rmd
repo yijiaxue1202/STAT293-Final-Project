@@ -27,7 +27,7 @@ surv<-ckd_data$surv
 # Data Preparation
 
 ```{r}
-# Verify event indicator coding
+#Verify coding
 unique(surv$failure)
 unique(prot$proteinuria)
 summary(prot$years)
@@ -74,7 +74,7 @@ cor(subject_means$mean_gfr,
 # =========================
 
 # -------------------------
-# 1) Baseline summaries + survival overview
+# 1) baseline eda
 # -------------------------
 summary(surv$age)
 summary(surv$weight)
@@ -90,7 +90,7 @@ plot(km_fit, xlab = "Time (years)", ylab = "Survival probability",
      main = "Kaplan–Meier Curve for Graft Survival")
 
 # -------------------------
-# 2) Distributions (continuous biomarkers)
+# 2) continuous var
 # -------------------------
 gfr_clean  <- gfr  %>% filter(is.finite(gfr), !is.na(gfr))
 haem_clean <- haem %>% filter(is.finite(haematocrit), !is.na(haematocrit))
@@ -108,7 +108,7 @@ ggplot(gfr_clean, aes(x = gfr)) +
   theme_minimal()
 
 # -------------------------
-# 3) Proteinuria prevalence over time
+# 3) binary var
 # -------------------------
 prot_clean <- prot %>%
   mutate(proteinuria = as.integer(as.character(proteinuria))) %>%  
@@ -126,7 +126,7 @@ ggplot(prot_prev, aes(x = years, y = prevalence)) +
   theme_minimal()
 
 # -------------------------
-# 4) Longitudinal trends + heterogeneity
+# 4) longitudinal outcomes
 # -------------------------
 set.seed(1)
 ids_gfr  <- sample(unique(gfr_clean$id),  min(30, length(unique(gfr_clean$id))))
@@ -155,7 +155,7 @@ ggplot(gfr_clean, aes(x = years, y = gfr)) +
   theme_minimal()
 
 # -------------------------
-# 5) Exploratory association: trends by failure status
+# 5) trend association
 # -------------------------
 ggplot(gfr_clean, aes(x = years, y = gfr, color = factor(failure))) +
   stat_smooth(se = FALSE, size = 1.2) +
@@ -170,7 +170,7 @@ ggplot(haem_clean, aes(x = years, y = haematocrit, color = factor(failure))) +
   theme_minimal()
 
 # -------------------------
-# 6) Missingness summary
+# 6) missingness
 # -------------------------
 miss_prop <- tibble(
   biomarker = c("GFR", "Haematocrit", "Proteinuria"),
@@ -249,16 +249,16 @@ joint_long <- full_join(
 
 joint_long$gender <- factor(joint_long$gender)
 
-# GFR model (with spline)
+# GFR with spline
 lme_gfr <- lme(
-  fixed = gfr ~ ns(years, df = 3), # cubic spline enters here
+  fixed = gfr ~ ns(years, df = 3), 
   random = ~ years | id,
   data = joint_long,
   na.action = na.exclude,
   control = lmeControl(opt = "optim")
 )
 
-# Haematocrit Model 
+# Haematocrit 
 lme_haem <- lme(
   fixed = haematocrit ~ years,
   random = ~ years | id,
@@ -267,7 +267,7 @@ lme_haem <- lme(
   control = lmeControl(opt = "optim")
 )
 
-# Proteinuria Model (mixed logistic model)
+# Proteinuria
 mixed_prot <- mixed_model(
   fixed = proteinuria ~ years,
   random = ~ 1 | id,
@@ -310,7 +310,7 @@ summary(joint_fit)
 
 # 1. GFR model diagnosis
 
-# ---- create diagnostic dataframe ----
+
 diag_gfr <- data.frame(
   fitted = fitted(lme_gfr, level = 0),
   residuals = resid(lme_gfr, type = "normalized")
@@ -472,12 +472,12 @@ plot(ph_test)
 summary(joint_fit)
 library(survminer)
 
-# ---- 4B.log(-log) survival curves ---- (checking the survival models's PH assumption is valid)
+# ---- 4B.log(-log) survival curves 
 ggsurvplot(
   survfit(Surv(fuyears, failure) ~ gender, data = surv_dat),
   fun = "cloglog"
 )
-## The curves for male and female subjects were approximately parallel over time, suggesting that the proportional hazards assumption for gender is reasonable.
+
 ```
 # Model Estimate (just for reference)
 
@@ -706,7 +706,6 @@ kable(
 
 fit_km <- survfit(Surv(fuyears, failure) ~ gender, data = surv_dat)
 
-# (this plot may or maynot used in our result)
 ggsurvplot(
   fit_km,
   risk.table = TRUE,
@@ -716,7 +715,7 @@ ggsurvplot(
   legend.title = "Gender"
 )
 
-# forest plot of hazard ratio, also is valid for secondary research question
+# forest plot 
 ggplot(hr_table, aes(x = Term, y = HR)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +
@@ -738,7 +737,6 @@ Specifically, we considered hypothetical scenarios in which the unobserved GFR v
 
 ```{r}
 # =========================================================
-# Sensitivity analysis for possible MNAR departures
 # Delta-shift on GFR
 # =========================================================
 
