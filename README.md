@@ -99,15 +99,15 @@ Random effects are allowed to be **correlated across biomarkers**.
 
 The hazard of graft failure is modeled using a **Cox proportional hazards model**:
 
-\[
+$\[
 h_i(t) = h_0(t)\exp\{\gamma^T X_i + \alpha_1 m_{i,gfr}(t) + \alpha_2 m_{i,haem}(t) + \alpha_3 m_{i,prot}(t)\}
-\]
+\]$
 
 where
 
-- \(X_i\) represents baseline covariates  
-- \(m_{i,\cdot}(t)\) are predicted biomarker trajectories  
-- \(\alpha_k\) quantify biomarker–failure associations.
+- $\(X_i\)$ represents baseline covariates  
+- $\(m_{i,\cdot}(t)\)$ are predicted biomarker trajectories  
+- $\(\alpha_k\)$ quantify biomarker–failure associations.
 
 ---
 
@@ -144,6 +144,12 @@ STAT293-Final-Project
 │
 ├── STAT293_Final_Project_presentation.pdf
 │ Final presentation slides
+│
+├── STAT293_Final_Project_Report.pdf
+│ Final report
+│
+├── Final_Report.tex
+│ Latex file to knit final report
 │
 └── README.md
 Project documentation
